@@ -2,62 +2,81 @@ const { findUid } = global.utils;
 const regExCheckURL = /^(http|https):\/\/[^ "]+$/;
 
 module.exports = {
-	config: {
-		name: "uid",
-		version: "1.3",
-		author: "NTKhang",
-		countDown: 5,
-		role: 0,
-		description: {
-			vi: "Xem user id facebook của người dùng",
-			en: "View facebook user id of user"
-		},
-		category: "info",
-		guide: {
-			vi: "   {pn}: dùng để xem id facebook của bạn"
-				+ "\n   {pn} @tag: xem id facebook của những người được tag"
-				+ "\n   {pn} <link profile>: xem id facebook của link profile"
-				+ "\n   Phản hồi tin nhắn của người khác kèm lệnh để xem id facebook của họ",
-			en: "   {pn}: use to view your facebook user id"
-				+ "\n   {pn} @tag: view facebook user id of tagged people"
-				+ "\n   {pn} <profile link>: view facebook user id of profile link"
-				+ "\n   Reply to someone's message with the command to view their facebook user id"
-		}
-	},
+  config: {
+    name: "uid",
+    version: "2.0.0",
+    author: "Jonell Magallanes",
+    countDown: 5,
+    role: 0,
+    shortDescription: {
+      en: "Get Facebook User ID"
+    },
+    longDescription: {
+      en: "Retrieve the Facebook ID of yourself, a tagged user, a replied sender, or a profile link."
+    },
+    category: "info",
+    guide: {
+      en: "{pn} - Get your UID\n{pn} @tag - Get tagged user's UID\n{pn} <profile link> - Get UID from link\nReply to a message - Get sender's UID"
+    }
+  },
 
-	langs: {
-		vi: {
-			syntaxError: "Vui lòng tag người muốn xem uid hoặc để trống để xem uid của bản thân"
-		},
-		en: {
-			syntaxError: "Please tag the person you want to view uid or leave it blank to view your own uid"
-		}
-	},
+  langs: {
+    en: {
+      syntaxError: "⚠️ Please tag someone, reply to a message, or provide a valid Facebook profile link."
+    }
+  },
 
-	onStart: async function ({ message, event, args, getLang }) {
-		if (event.messageReply)
-			return message.reply(event.messageReply.senderID);
-		if (!args[0])
-			return message.reply(event.senderID);
-		if (args[0].match(regExCheckURL)) {
-			let msg = '';
-			for (const link of args) {
-				try {
-					const uid = await findUid(link);
-					msg += `${link} => ${uid}\n`;
-				}
-				catch (e) {
-					msg += `${link} (ERROR) => ${e.message}\n`;
-				}
-			}
-			message.reply(msg);
-			return;
-		}
+  onStart: async function ({ api, event, args, message, getLang, usersData }) {
+    const { threadID, senderID, messageReply, messageID, mentions } = event;
 
-		let msg = "";
-		const { mentions } = event;
-		for (const id in mentions)
-			msg += `${mentions[id].replace("@", "")}: ${id}\n`;
-		message.reply(msg || getLang("syntaxError"));
-	}
+    // Helper to send contact card
+    const sendContact = async (id) => {
+      try {
+        const name = await usersData.getName(id);
+        if (typeof api.shareContact === "function") {
+          return api.shareContact(id, id, threadID);
+        } else {
+          return message.reply(`👤 Name: ${name}\n🆔 UID: ${id}`);
+        }
+      } catch (err) {
+        return message.reply(`🆔 UID: ${id}`);
+      }
+    };
+
+    // Handle Reply
+    if (messageReply) {
+      return sendContact(messageReply.senderID);
+    }
+
+    // Handle No Arguments (Self)
+    if (args.length === 0) {
+      return sendContact(senderID);
+    }
+
+    // Handle Links
+    if (args[0].match(regExCheckURL)) {
+      api.setMessageReaction("🔍", messageID, () => {}, true);
+      for (const link of args) {
+        if (!link.match(regExCheckURL)) continue;
+        try {
+          const uid = await findUid(link);
+          await sendContact(uid);
+        } catch (e) {
+          message.reply(`📝 Link: ${link}\n❌ Error: ${e.message}`);
+        }
+      }
+      return api.setMessageReaction("✅", messageID, () => {}, true);
+    }
+
+    // Handle Mentions
+    if (Object.keys(mentions).length > 0) {
+      for (const id in mentions) {
+        await sendContact(id);
+      }
+      return;
+    }
+
+    // Fallback
+    return message.reply(getLang("syntaxError"));
+  }
 };

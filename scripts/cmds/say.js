@@ -20,7 +20,7 @@ module.exports = {
     const p = getPrefix(event.threadID);
 
     let text;
-    let number = 'en';
+    let number = 'tl';
 
     if (event.type === "message_reply") {
       text = event.messageReply.body;

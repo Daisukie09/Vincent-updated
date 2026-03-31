@@ -35,67 +35,27 @@ module.exports = {
     const usedMemoryBytes = totalMemoryBytes - freeMemoryBytes;
     
     const bytesToGB = (bytes) => (bytes / (1024 * 1024 * 1024)).toFixed(2);
-    const bytesToMB = (bytes) => (bytes / (1024 * 1024)).toFixed(2);
 
     const totalMemoryGB = bytesToGB(totalMemoryBytes);
     const usedMemoryGB = bytesToGB(usedMemoryBytes);
-    const freeMemoryGB = bytesToGB(freeMemoryBytes);
     
-    const cpus = os.cpus();
-    const cpuModel = cpus[0].model.replace(/\s+/g, ' ');
-    const cpuCores = cpus.length;
-    const cpuSpeed = cpus[0].speed;
-    
+    const cpuModel = os.cpus()[0].model.replace(/\s+/g, ' '); 
     const osType = os.type();
-    const osPlatform = os.platform();
-    const osRelease = os.release();
-    const osHostname = os.hostname();
     
     const processMemoryUsage = process.memoryUsage();
-    const nodeUsedMemoryMB = bytesToMB(processMemoryUsage.heapUsed);
-    const nodeTotalMemoryMB = bytesToMB(processMemoryUsage.heapTotal);
-    const nodeRSSMB = bytesToMB(processMemoryUsage.rss);
-    
-    // Load average (Unix/Linux only, Windows returns [0, 0, 0])
-    const loadAvg = os.loadavg();
-    const loadAvgStr = loadAvg.map(l => l.toFixed(2)).join(', ');
-    
-    // Bot stats
-    const botID = global.GoatBot?.botID || 'N/A';
-    const commandCount = global.GoatBot?.commands?.size || 0;
-    const threadCount = global.db?.allThreadData?.length || 0;
-    const userCount = global.db?.allUserData?.length || 0;
+    const nodeUsedMemoryMB = (processMemoryUsage.heapUsed / 1024 / 1024).toFixed(2);
 
     const msg = 
       `┌─── BOT UPTIME ───×\n` +
       `│\n` +
       `│ [~] Uptime: ${botUptimeFormatted}\n` +
-      `│ [~] Bot ID: ${botID}\n` +
-      `│ [~] Commands: ${commandCount}\n` +
-      `│ [~] Threads: ${threadCount}\n` +
-      `│ [~] Users: ${userCount}\n` +
+      `│ [~] Node: v${process.versions.node}\n` +
+      `│ [~] RAM (Bot): ${nodeUsedMemoryMB}MB\n` +
       `│\n` +
-      `├─── NODE.JS ───×\n` +
-      `│ [~] Version: v${process.versions.node}\n` +
-      `│ [~] V8: ${process.versions.v8}\n` +
-      `│ [~] PID: ${process.pid}\n` +
-      `│\n` +
-      `├─── BOT MEMORY ───×\n` +
-      `│ [~] Heap Used: ${nodeUsedMemoryMB} MB\n` +
-      `│ [~] Heap Total: ${nodeTotalMemoryMB} MB\n` +
-      `│ [~] RSS: ${nodeRSSMB} MB\n` +
-      `│\n` +
-      `├─── SYSTEM ───×\n` +
-      `│ [~] Hostname: ${osHostname}\n` +
-      `│ [~] OS: ${osType} ${osRelease}\n` +
-      `│ [~] Platform: ${osPlatform} (${os.arch()})\n` +
-      `│\n` +
-      `├─── HARDWARE ───×\n` +
+      `├─── HOSTING ───×\n` +
+      `│ [~] OS: ${osType} (${os.arch()})\n` +
       `│ [~] CPU: ${cpuModel}\n` +
-      `│ [~] Cores: ${cpuCores} @ ${cpuSpeed}MHz\n` +
-      `│ [~] RAM Used: ${usedMemoryGB} GB / ${totalMemoryGB} GB\n` +
-      `│ [~] RAM Free: ${freeMemoryGB} GB\n` +
-      `│ [~] Load Avg: [${loadAvgStr}]\n` +
+      `│ [~] RAM (Used/Total): ${usedMemoryGB}GB / ${totalMemoryGB}GB\n` +
       `└───────────────×`;
       
     message.reply(msg);

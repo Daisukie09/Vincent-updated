@@ -5,7 +5,7 @@ const path = require("path");
 module.exports = {
   config: {
     name: "metaai",
-    aliases: ["meta", "llama", "ai"],
+    aliases: ["meta", "llama"],
     version: "2.5pro",
     author: "Neoaz 🐊",
     countDown: 5,

@@ -72,7 +72,7 @@ module.exports = {
       message.reaction("✅", event.messageID);
       
       await message.reply({
-        body: `Background removed successfully!`,
+        body: `🖼️ Background removed successfully!`,
         attachment: fs.createReadStream(tempFilePath)
       });
 
