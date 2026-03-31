@@ -270,6 +270,7 @@ module.exports = {
 
   onChat: async function ({ api, event, message, commandName }) {
     if (!event.body) return;
+    if (event.senderID === global.GoatBot.botID) return;
     const body = event.body.toLowerCase();
     const { getPrefix } = global.utils;
     const prefix = getPrefix(event.threadID);
