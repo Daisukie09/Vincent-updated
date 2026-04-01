@@ -42,7 +42,7 @@ module.exports = {
     const command = (args[0] || "").toLowerCase();
     const senderID = event.senderID;
     const userMail = global.GoatBot.tempMailVN.get(senderID);
-    const pn = prefix + "tempmailvn";
+    const pn = prefix + "temp";
 
     if (command === "myemail") {
       if (!userMail) {
