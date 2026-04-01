@@ -38,20 +38,21 @@ module.exports = {
     },
   },
 
-  onStart: async function ({ api, message, event, args }) {
+  onStart: async function ({ api, message, event, args, prefix }) {
     const command = (args[0] || "").toLowerCase();
     const senderID = event.senderID;
     const userMail = global.GoatBot.tempMailVN.get(senderID);
+    const pn = prefix + "tempmailvn";
 
     if (command === "myemail") {
       if (!userMail) {
         return message.reply(
-          "❌ You don't have a temp email. Use {pn} gen to create one."
+          `❌ You don't have a temp email. Use ${pn} gen to create one.`
         );
       }
       if (Date.now() > userMail.expires) {
         global.GoatBot.tempMailVN.delete(senderID);
-        return message.reply("❌ Email expired. Use {pn} gen to create new.");
+        return message.reply(`❌ Email expired. Use ${pn} gen to create new.`);
       }
       return message.reply(
         `📧 Your Email:\n━━━━━━━━━━━━━━━━━━\n${
@@ -95,7 +96,7 @@ module.exports = {
 
         await message.reaction("✅", event.messageID);
         return message.reply(
-          `✅ Email Created!\n━━━━━━━━━━━━━━━━━━\n📧 ${email}\n\n⏱️ Expires in 1 hour\n💡 Use {pn} check to view inbox\n━━━━━━━━━━━━━━━━━━`
+          `✅ Email Created!\n━━━━━━━━━━━━━━━━━━\n📧 ${email}\n\n⏱️ Expires in 1 hour\n💡 Use ${pn} check to view inbox\n━━━━━━━━━━━━━━━━━━`
         );
       } catch (error) {
         console.error("[TempMailVN] Create error:", error.message);
@@ -110,7 +111,7 @@ module.exports = {
     if (command === "check" || command === "inbox") {
       if (!userMail) {
         return message.reply(
-          "❌ You don't have a temp email. Use {pn} gen to create one."
+          `❌ You don't have a temp email. Use ${pn} gen to create one.`
         );
       }
 
@@ -183,9 +184,9 @@ module.exports = {
       return message.reply(
         `📧 TempMail devlogtech.web.id\n━━━━━━━━━━━━━━━━━━\n\n` +
           `Commands:\n` +
-          `   {pn} gen - Generate new email\n` +
-          `   {pn} check - Check inbox\n` +
-          `   {pn} myemail - View current email\n\n` +
+          `   ${pn} gen - Generate new email\n` +
+          `   ${pn} check - Check inbox\n` +
+          `   ${pn} myemail - View current email\n\n` +
           `📌 Generate an email first!`
       );
     }
@@ -193,9 +194,9 @@ module.exports = {
     return message.reply(
       `📧 Current Email: ${userMail.email}\n\n` +
         `Commands:\n` +
-        `   {pn} check - Check inbox\n` +
-        `   {pn} gen - Generate new email\n` +
-        `   {pn} myemail - View email`
+        `   ${pn} check - Check inbox\n` +
+        `   ${pn} gen - Generate new email\n` +
+        `   ${pn} myemail - View email`
     );
   },
 

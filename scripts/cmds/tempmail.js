@@ -1,27 +1,81 @@
 const axios = require("axios");
 
-const API_BASE = "https://temporary-emaill.netlify.app/api/messages";
-const DOMAINS = [
-  "@timpmeyl.indevs.in",
-  "@ccmeyl.indevs.in",
-  "@highnmeyl.indevs.in",
-  "@lowmeyl.indevs.in",
-  "@marmeyl.indevs.in",
-];
+const API_BASE = "https://api.mail.tm";
+const RETRY_DELAYS = [1000, 2000, 3000];
 
-if (!global.GoatBot.tempMail) {
-  global.GoatBot.tempMail = new Map();
+let cachedDomains = null;
+let domainsCacheTime = 0;
+const DOMAINS_CACHE_TTL = 3600000;
+
+if (!global.GoatBot.mailTm) {
+  global.GoatBot.mailTm = new Map();
 }
 
-function generateRandomEmail(domain) {
-  const random = Math.random().toString(36).substring(2, 10);
-  return random + domain;
+async function retryRequest(fn, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error.response?.status === 429 && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[i]));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function getDomains() {
+  const now = Date.now();
+  if (cachedDomains && now - domainsCacheTime < DOMAINS_CACHE_TTL) {
+    return cachedDomains;
+  }
+  const response = await retryRequest(() => axios.get(`${API_BASE}/domains`));
+  cachedDomains = response.data["hydra:member"];
+  domainsCacheTime = now;
+  return cachedDomains;
+}
+
+async function createAccount(address, password) {
+  const response = await retryRequest(() =>
+    axios.post(
+      `${API_BASE}/accounts`,
+      { address, password },
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+  return response.data;
+}
+
+async function getToken(address, password) {
+  const response = await retryRequest(() =>
+    axios.post(
+      `${API_BASE}/token`,
+      { address, password },
+      { headers: { "Content-Type": "application/json" } }
+    )
+  );
+  return response.data.token;
+}
+
+async function getMessages(token) {
+  const response = await axios.get(`${API_BASE}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data["hydra:member"];
+}
+
+async function getMessage(token, messageId) {
+  const response = await axios.get(`${API_BASE}/messages/${messageId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
 }
 
 module.exports = {
   config: {
     name: "tempmail",
-    aliases: ["tempemail", "tmpmail", "email"],
+    aliases: ["mailtm", "tempemail", "tmpmail"],
     version: "1.0.0",
     author: "VincentSensei",
     countDown: 5,
@@ -30,104 +84,113 @@ module.exports = {
       en: "Generate temporary email and check inbox",
     },
     longDescription: {
-      en: "Generate a temporary email address, check inbox, and extract verification codes. Emails expire after 1 hour.",
+      en: "Generate a temporary email address using mail.tm API, check inbox, and extract verification codes.",
     },
     category: "utility",
     guide: {
       en:
         "   {pn} gen - Generate new random email\n" +
-        "   {pn} gen <name> - Generate email with custom name\n" +
         "   {pn} check - Check inbox for current email\n" +
         "   {pn} myemail - Show your current email\n" +
-        "   {pn} domains - List available domains",
+        "   {pn} read <id> - Read specific message\n" +
+        "   {pn} delete - Delete current email",
     },
   },
 
-  onStart: async function ({ message, args, event, api }) {
+  onStart: async function ({ message, args, event, api, prefix }) {
     const command = args[0]?.toLowerCase();
     const senderID = event.senderID;
-    const userMail = global.GoatBot.tempMail.get(senderID);
+    const userMail = global.GoatBot.mailTm.get(senderID);
+    const pn = prefix + "tempmail";
 
-    if (command === "domains") {
-      let reply = "📧 Available Domains:\n━━━━━━━━━━━━━━━━━━\n";
-      DOMAINS.forEach((d) => {
-        reply += `   ${d}\n`;
-      });
-      reply += "━━━━━━━━━━━━━━━━━━";
-      return message.reply(reply);
+    if (command === "delete") {
+      if (!userMail) {
+        return message.reply("❌ You don't have a temporary email yet.");
+      }
+      global.GoatBot.mailTm.delete(senderID);
+      return message.reply("✅ Email deleted successfully!");
     }
 
     if (command === "myemail") {
       if (!userMail) {
         return message.reply(
-          "❌ You don't have a temporary email yet. Use `{pn} gen` to create one."
+          `❌ You don't have a temporary email yet. Use ${pn} gen to create one.`
         );
       }
       return message.reply(
-        `📧 Your Temp Email:\n━━━━━━━━━━━━━━━━━━\n${
-          userMail.email
-        }\n\n⏱️ Expires: ${new Date(
-          userMail.expires
-        ).toLocaleString()}\n━━━━━━━━━━━━━━━━━━`
+        `📧 Your Temp Email:\n━━━━━━━━━━━━━━━━━━\n${userMail.email}\n━━━━━━━━━━━━━━━━━━`
       );
     }
 
     if (command === "gen") {
-      const customName = args
-        .slice(1)
-        .join("")
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "");
-      const domain = DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
+      await message.reaction("⏳", event.messageID);
 
-      let email;
-      if (customName) {
-        email = customName + domain;
-      } else {
-        email = generateRandomEmail(domain);
+      try {
+        const domains = await getDomains();
+        const domain = domains[0].domain;
+        const randomName = Math.random().toString(36).substring(2, 10);
+        const email = `${randomName}@${domain}`;
+        const password = Math.random().toString(36).substring(2, 15);
+
+        await createAccount(email, password);
+        const token = await getToken(email, password);
+
+        global.GoatBot.mailTm.set(senderID, {
+          email,
+          token,
+          password,
+          created: Date.now(),
+        });
+
+        await message.reaction("✅", event.messageID);
+        return message.reply(
+          `✅ Email Generated!\n━━━━━━━━━━━━━━━━━━\n📧 ${email}\n\n💡 Use ${pn} check to view inbox\n━━━━━━━━━━━━━━━━━━`
+        );
+      } catch (error) {
+        console.error("[MailTm] Gen Error:", error.message);
+        await message.reaction("❌", event.messageID);
+        return message.reply(`❌ Error generating email: ${error.message}`);
+      }
+    }
+
+    if (command === "read") {
+      if (!userMail) {
+        return message.reply(
+          `❌ You don't have a temporary email yet. Use ${pn} gen to create one.`
+        );
       }
 
-      const expires = Date.now() + 3600000;
+      const msgId = args[1];
+      if (!msgId) {
+        return message.reply(
+          `❌ Please provide message ID. Use ${pn} check to see messages.`
+        );
+      }
 
-      global.GoatBot.tempMail.set(senderID, {
-        email,
-        expires,
-        created: Date.now(),
-      });
-
-      await message.reaction("✅", event.messageID);
-      return message.reply(
-        `✅ Email Generated!\n━━━━━━━━━━━━━━━━━━\n📧 ${email}\n\n⏱️ Expires in 1 hour\n💡 Use {pn} check to view inbox\n━━━━━━━━━━━━━━━━━━`
-      );
+      try {
+        const msg = await getMessage(userMail.token, msgId);
+        const reply = `━━━━━━━━━━━━━━━━━━\n📩 Message #${msgId}\n━━━━━━━━━━━━━━━━━━\n📤 From: ${
+          msg.from.address
+        }\n📋 Subject: ${msg.subject}\n━━━━━━━━━━━━━━━━━━\n\n${
+          msg.text || msg.html || "No content"
+        }\n━━━━━━━━━━━━━━━━━━`;
+        return message.reply(reply);
+      } catch (error) {
+        return message.reply(`❌ Error reading message: ${error.message}`);
+      }
     }
 
     if (command === "check") {
       if (!userMail) {
         return message.reply(
-          "❌ You don't have a temporary email yet. Use `{pn} gen` to create one."
-        );
-      }
-
-      if (Date.now() > userMail.expires) {
-        global.GoatBot.tempMail.delete(senderID);
-        return message.reply(
-          "❌ Your temporary email has expired. Use `{pn} gen` to create a new one."
+          `❌ You don't have a temporary email yet. Use ${pn} gen to create one.`
         );
       }
 
       await message.reaction("⏳", event.messageID);
 
       try {
-        const response = await axios.get(
-          `${API_BASE}?address=${encodeURIComponent(
-            userMail.email
-          )}&nocache=${Date.now()}`,
-          {
-            timeout: 15000,
-          }
-        );
-
-        const messages = response.data;
+        const messages = await getMessages(userMail.token);
 
         if (!messages || messages.length === 0) {
           await message.reaction("📧", event.messageID);
@@ -143,48 +206,41 @@ module.exports = {
         })\n━━━━━━━━━━━━━━━━━━\n\n`;
 
         messages.slice(0, 5).forEach((msg, i) => {
-          const from = (msg.from || "Unknown")
-            .split("<")[0]
-            .replace(/"/g, "")
-            .trim();
+          const from = (msg.from.address || "Unknown").split("@")[0];
           const subject = msg.subject || "No Subject";
-          const date = new Date(msg.date).toLocaleString();
+          const id = msg.id;
 
           reply += `${i + 1}. 📩 From: ${from}\n`;
-          reply += `   Subject: ${subject.substring(0, 50)}${
-            subject.length > 50 ? "..." : ""
+          reply += `   Subject: ${subject.substring(0, 40)}${
+            subject.length > 40 ? "..." : ""
           }\n`;
-          reply += `   Time: ${date}\n\n`;
+          reply += `   ID: ${id}\n\n`;
         });
 
         if (messages.length > 5) {
           reply += `\n📌 Showing first 5 of ${messages.length} messages.`;
         }
 
-        reply += `\n━━━━━━━━━━━━━━━━━━\n💡 Use detailed view for codes.`;
+        reply += `\n━━━━━━━━━━━━━━━━━━\n💡 Use ${pn} read <id> to read message.`;
 
         await message.reply(reply);
-
-        for (const msg of messages.slice(0, 5)) {
-          await sendMessageDetail(api, event.threadID, msg);
-        }
+        return;
       } catch (error) {
-        console.error("[TempMail] Error:", error.message);
+        console.error("[MailTm] Check Error:", error.message);
         await message.reaction("❌", event.messageID);
-        message.reply(`❌ Error checking inbox: ${error.message}`);
+        return message.reply(`❌ Error checking inbox: ${error.message}`);
       }
-      return;
     }
 
     if (!userMail) {
       return message.reply(
-        `📧 Temp Mail Generator\n━━━━━━━━━━━━━━━━━━\n\n` +
+        `📧 Temp Mail (mail.tm)\n━━━━━━━━━━━━━━━━━━\n\n` +
           `Commands:\n` +
-          `   {pn} gen - Generate random email\n` +
-          `   {pn} gen <name> - Custom email\n` +
-          `   {pn} check - Check inbox\n` +
-          `   {pn} myemail - View current email\n` +
-          `   {pn} domains - List domains\n\n` +
+          `   ${pn} gen - Generate random email\n` +
+          `   ${pn} check - Check inbox\n` +
+          `   ${pn} myemail - View current email\n` +
+          `   ${pn} read <id> - Read message\n` +
+          `   ${pn} delete - Delete email\n\n` +
           `━━━━━━━━━━━━━━━━━━\n` +
           `📌 Generate an email first!`
       );
@@ -193,42 +249,10 @@ module.exports = {
     return message.reply(
       `📧 Your Temp Email: ${userMail.email}\n\n` +
         `Commands:\n` +
-        `   {pn} check - Check inbox\n` +
-        `   {pn} gen - Generate new email\n` +
-        `   {pn} myemail - View current email`
+        `   ${pn} check - Check inbox\n` +
+        `   ${pn} read <id> - Read message\n` +
+        `   ${pn} gen - Generate new email\n` +
+        `   ${pn} delete - Delete email`
     );
   },
 };
-
-async function sendMessageDetail(api, threadID, msg) {
-  try {
-    const body = msg.body || "";
-    const subject = msg.subject || "No Subject";
-    const from = (msg.from || "Unknown").split("<")[0].replace(/"/g, "").trim();
-    const date = new Date(msg.date).toLocaleString();
-
-    const codeMatch = subject.match(/\b\d{5,6}\b/);
-    let displayCode = null;
-    if (codeMatch) {
-      displayCode = codeMatch[0];
-    }
-
-    let reply = `━━━━━━━━━━━━━━━━━━\n`;
-    reply += `📩 Message Details\n`;
-    reply += `━━━━━━━━━━━━━━━━━━\n`;
-    reply += `📤 From: ${from}\n`;
-    reply += `📋 Subject: ${subject}\n`;
-    reply += `🕐 Time: ${date}\n`;
-
-    if (displayCode) {
-      reply += `\n🔑 Verification Code:\n`;
-      reply += `   ${displayCode}\n`;
-    }
-
-    reply += `━━━━━━━━━━━━━━━━━━`;
-
-    await api.sendMessage(reply, threadID);
-  } catch (e) {
-    console.error("[TempMail] Detail send error:", e.message);
-  }
-}
