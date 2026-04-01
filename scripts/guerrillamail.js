@@ -47,13 +47,14 @@ module.exports = {
     },
   },
 
-  onStart: async function ({ message, args, event, api }) {
+  onStart: async function ({ message, args, event, api, prefix }) {
     const command = args[0]?.toLowerCase();
     const senderID = event.senderID;
     const userMail = global.GoatBot.guerrillaMail.get(senderID);
+    const pn = prefix + "temp";
 
     if (command === "myemail") {
-      if (!userMail) return message.reply("❌ No email. Use `{pn} gen` first.");
+      if (!userMail) return message.reply(`❌ No email. Use ${pn} gen first.`);
       return message.reply(
         "📧 Your Guerrilla Mail:\n━━━━━━━━━━━━━━━━━━\n" +
           userMail.email +
@@ -82,7 +83,7 @@ module.exports = {
           return message.reply(
             "✅ Guerrilla Mail Generated!\n━━━━━━━━━━━━━━━━━━\n📧 " +
               email +
-              "\n\n📌 Emails deleted after 1 hour\n💡 Use `{pn} check` to view inbox\n━━━━━━━━━━━━━━━━━━"
+              `\n\n📌 Emails deleted after 1 hour\n💡 Use ${pn} check to view inbox\n━━━━━━━━━━━━━━━━━━`
           );
         } else {
           throw new Error("No email returned");
@@ -95,7 +96,7 @@ module.exports = {
     }
 
     if (command === "check") {
-      if (!userMail) return message.reply("❌ No email. Use `{pn} gen` first.");
+      if (!userMail) return message.reply(`❌ No email. Use ${pn} gen first.`);
 
       await message.reaction("⏳", event.messageID);
 
@@ -166,14 +167,14 @@ module.exports = {
 
     if (!userMail) {
       return message.reply(
-        "📧 Guerrilla Mail\n━━━━━━━━━━━━━━━━━━\n\n{pn} gen - Generate email\n{pn} check - View inbox\n{pn} myemail - Show your email\n━━━━━━━━━━━━━━━━━━"
+        `📧 Guerrilla Mail\n━━━━━━━━━━━━━━━━━━\n\n${pn} gen - Generate email\n${pn} check - View inbox\n${pn} myemail - Show your email\n━━━━━━━━━━━━━━━━━━`
       );
     }
 
     return message.reply(
       "📧 " +
         userMail.email +
-        "\n\n{pn} check - View inbox\n{pn} gen - New email"
+        `\n\n${pn} check - View inbox\n${pn} gen - New email`
     );
   },
 };
