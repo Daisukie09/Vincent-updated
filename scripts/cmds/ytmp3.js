@@ -1,6 +1,5 @@
 const axios = require("axios");
 const fs = require("fs-extra");
-const os = require("os");
 const path = require("path");
 const { pipeline } = require("stream/promises");
 const ytSearch = require("yt-search");
@@ -36,6 +35,21 @@ function getAuth() {
 
 function getTimestamp() {
   return Math.floor(Date.now() / 1000);
+}
+
+function progressBar(percent, length = 20) {
+  const filled = Math.round((percent / 100) * length);
+  const empty = length - filled;
+  return "█".repeat(filled) + "░".repeat(empty);
+}
+
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function extractVideoId(url) {
@@ -78,10 +92,12 @@ async function apiGet(url) {
   return res.data;
 }
 
-async function pollProgress(progressUrl, maxAttempts = 40) {
+async function pollProgress(progressUrl, onProgress, maxAttempts = 40) {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     const data = await apiGet(progressUrl + "&t=" + getTimestamp());
+    const percent = Math.min(95, (data.progress / 3) * 95);
+    onProgress(percent);
     if (data.progress >= 3) {
       return true;
     }
@@ -92,10 +108,10 @@ async function pollProgress(progressUrl, maxAttempts = 40) {
   throw new Error("Conversion timed out");
 }
 
-async function downloadViaYtmp3(videoId, format, topResult) {
+async function downloadViaYtmp3(videoId, format, topResult, onProgress) {
   const auth = getAuth();
 
-  // Step 1: Initialize
+  onProgress(10);
   const initUrl = `https://ytmp3.gs/~i/?y=${encodeURIComponent(auth)}&t=${getTimestamp()}`;
   const initData = await apiGet(initUrl);
 
@@ -103,7 +119,7 @@ async function downloadViaYtmp3(videoId, format, topResult) {
     throw new Error("Init failed");
   }
 
-  // Step 2: Convert
+  onProgress(25);
   const convertUrl = `${initData.convertURL}&v=${videoId}&f=${format}&t=${getTimestamp()}`;
   const convertData = await apiGet(convertUrl);
 
@@ -111,7 +127,7 @@ async function downloadViaYtmp3(videoId, format, topResult) {
     throw new Error("Convert failed: " + convertData.error);
   }
 
-  // Step 3: Handle redirect if needed
+  onProgress(40);
   let downloadUrl, title;
   if (convertData.redirect === 1) {
     const redirectData = await apiGet(convertData.redirectURL);
@@ -126,11 +142,11 @@ async function downloadViaYtmp3(videoId, format, topResult) {
     throw new Error("No download URL");
   }
 
-  // Step 4: Poll progress
   if (convertData.progressURL) {
-    await pollProgress(convertData.progressURL);
+    await pollProgress(convertData.progressURL, onProgress);
   }
 
+  onProgress(100);
   return { downloadUrl: `${downloadUrl}&s=2&v=${videoId}&f=${format}`, title };
 }
 
@@ -138,7 +154,7 @@ module.exports = {
   config: {
     name: "ytmp3",
     aliases: ["ytmp4", "ytmp3gg", "music"],
-    version: "6.0",
+    version: "11.0",
     author: "VincentSensei",
     countDown: 5,
     role: 0,
@@ -154,12 +170,10 @@ module.exports = {
 
   langs: {
     vi: {
-      searching: "🔍 Đang tìm kiếm...",
       invalidUrl: "❌ URL YouTube không hợp lệ.",
       noResults: "❌ Không tìm thấy kết quả.",
       noQuery: "❌ Vui lòng nhập tên bài hát hoặc URL YouTube.",
-      tooLong: ⚠️ Video quá dài. Chỉ hỗ trợ video dưới 30 phút.",
-      converting: "⏳ Đang chuyển đổi %1...",
+      tooLong: "⚠️ Video quá dài. Chỉ hỗ trợ video dưới 30 phút.",
       failed: "❌ Không thể tải. Vui lòng thử lại.",
       tooLarge: "⚠️ File quá lớn để gửi (%1 MB). Link tải: %2",
       error: "❌ Lỗi: %1",
@@ -169,13 +183,11 @@ module.exports = {
         '🎧 YTMP3 - MUSIC DOWNLOAD\n\n━━━━━━━━━━━━━━━━━━━\n🎶 Tiêu đề: %1\n👤 Kênh: %2\n⏱️ Thời lượng: %3\n🔗 YouTube: %4\n━━━━━━━━━━━━━━━━━━━\n💾 Reply "dl" để lấy link tải.',
     },
     en: {
-      searching: "🔍 Searching...",
       invalidUrl: "❌ Invalid YouTube URL.",
       noResults: "❌ No results found.",
       noQuery: "❌ Please enter a song name or YouTube URL.",
       tooLong:
         "⚠️ This video is too long. Only videos under 30 minutes are supported.",
-      converting: "⏳ Converting %1...",
       failed: "❌ Failed to download. Please try again.",
       tooLarge: "⚠️ File too large to send (%1 MB). Download link: %2",
       error: "❌ Error: %1",
@@ -189,10 +201,8 @@ module.exports = {
   onStart: async function ({ message, args, event, getLang, api }) {
     let videoId, topResult;
 
-    const processingMsg = await message.reply(getLang("searching"));
-
     try {
-      let isAudio = true; // Default to MP3/music
+      let isAudio = true;
       let queryArgs = [...args];
 
       if (queryArgs.includes("-v")) {
@@ -207,6 +217,26 @@ module.exports = {
         await message.reply(getLang("noQuery"));
         return;
       }
+
+      const format = isAudio ? "MP3" : "MP4";
+
+      let loadingMsg = await message.reply(
+        `⏳ Processing Request\n━━━━━━━━━━━━━━━━━━━\n📥 Format: ${format}\n🔍 Status: Processing...\n${progressBar(0)} 0%\n━━━━━━━━━━━━━━━━━━━`,
+      );
+
+      let lastLoadingMsgId = loadingMsg.messageID;
+
+      const updateLoading = async (percent, status) => {
+        try {
+          const newMsg = await message.reply(
+            `⏳ Processing Request\n━━━━━━━━━━━━━━━━━━━\n📥 Format: ${format}\n🔍 Status: ${status}\n${progressBar(percent)} ${percent}%\n━━━━━━━━━━━━━━━━━━━`,
+          );
+          try {
+            api.unsendMessage(lastLoadingMsgId);
+          } catch (e) {}
+          lastLoadingMsgId = newMsg.messageID;
+        } catch (e) {}
+      };
 
       const isUrl = /^https?:\/\//.test(query);
 
@@ -234,8 +264,12 @@ module.exports = {
         videoId = topResult.videoId;
       }
 
-      const timestamp = topResult.timestamp;
-      const parts = timestamp.split(":").map(Number);
+      const timestampStr =
+        typeof topResult.timestamp === "string"
+          ? topResult.timestamp
+          : formatDuration(topResult.seconds || 0);
+
+      const parts = timestampStr.split(":").map(Number);
       const durationSeconds =
         parts.length === 3
           ? parts[0] * 3600 + parts[1] * 60 + parts[2]
@@ -246,24 +280,30 @@ module.exports = {
         return;
       }
 
-      const format = isAudio ? "mp3" : "mp4";
-
-      await message.unsend(processingMsg.messageID);
       await message.reaction("⏳", event.messageID);
-
-      const convertMsg = await message.reply(
-        getLang("converting", format.toUpperCase()),
-      );
+      await updateLoading(10, "Searching...");
 
       const { downloadUrl, title } = await downloadViaYtmp3(
         videoId,
-        format,
+        isAudio ? "mp3" : "mp4",
         topResult,
+        (percent) => {
+          let status = "Initializing...";
+          if (percent > 10) status = "Extracting audio...";
+          if (percent > 25) status = "Converting to " + format + "...";
+          if (percent > 40) status = "Processing conversion...";
+          if (percent > 70) status = "Finalizing...";
+          if (percent > 90) status = "Almost done...";
+          updateLoading(Math.round(percent), status);
+        },
       );
 
+      await updateLoading(95, "Downloading file...");
+
       const extension = isAudio ? "mp3" : "mp4";
+      const tmpDir = process.env.TEMP || process.env.TMP || "/tmp";
       const tmpFile = path.join(
-        os.tmpdir(),
+        String(tmpDir),
         `ytmp3_${Date.now()}.${extension}`,
       );
 
@@ -277,14 +317,35 @@ module.exports = {
         },
       });
 
+      let downloaded = 0;
+      const totalSize =
+        parseInt(fileResponse.headers["content-length"], 10) || 0;
+      const downloadInterval = setInterval(() => {
+        if (totalSize > 0) {
+          const dlPercent = Math.min(
+            99,
+            Math.round((downloaded / totalSize) * 100),
+          );
+          updateLoading(
+            dlPercent,
+            `Downloading... ${(downloaded / 1024 / 1024).toFixed(1)} MB`,
+          );
+        }
+      }, 500);
+
+      fileResponse.data.on("data", (chunk) => {
+        downloaded += chunk.length;
+      });
+
       await pipeline(fileResponse.data, fs.createWriteStream(tmpFile));
+      clearInterval(downloadInterval);
 
       const stats = fs.statSync(tmpFile);
       const fileSizeMB = stats.size / (1024 * 1024);
       const maxSizeMB = 83;
 
+      await updateLoading(100, "Complete! ✅");
       message.reaction("✅", event.messageID);
-      await message.unsend(convertMsg.messageID);
 
       const quality = isAudio ? "MP3" : "Auto";
       const infoTemplate = isAudio
@@ -294,12 +355,12 @@ module.exports = {
         ? infoTemplate
             .replace("%1", title)
             .replace("%2", topResult.author.name)
-            .replace("%3", timestamp)
+            .replace("%3", timestampStr)
             .replace("%4", topResult.url)
         : infoTemplate
             .replace("%1", title)
             .replace("%2", quality)
-            .replace("%3", timestamp)
+            .replace("%3", timestampStr)
             .replace("%4", topResult.author.name);
 
       if (fileSizeMB > maxSizeMB) {
@@ -322,7 +383,7 @@ module.exports = {
         await message.reply(
           getLang("tooLarge", fileSizeMB.toFixed(2), shortLink),
         );
-        fs.unlink(tmpFile).catch(() => {});
+        fs.unlinkSync(tmpFile);
         return;
       }
 
@@ -332,7 +393,6 @@ module.exports = {
           attachment: fs.createReadStream(tmpFile),
         });
 
-        // Register reply for download link
         if (isAudio) {
           global.GoatBot.onReply.set(sentMsg.messageID, {
             commandName: this.config.name,
@@ -347,15 +407,11 @@ module.exports = {
         );
       }
 
-      fs.unlink(tmpFile).catch(() => {});
+      fs.unlinkSync(tmpFile);
     } catch (error) {
       console.error("[YTMP3] Error:", error.message);
       message.reaction("❌", event.messageID);
       await message.reply(getLang("error", error.message));
-    } finally {
-      try {
-        await message.unsend(processingMsg.messageID);
-      } catch {}
     }
   },
 
