@@ -2,10 +2,7 @@ const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 const { soundcloud: scDownload } = require("btch-downloader");
-const puppeteer = require("puppeteer-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-
-puppeteer.use(StealthPlugin());
+const puppeteer = require("puppeteer");
 
 function extractTrackId(url) {
   try {
@@ -45,7 +42,12 @@ function formatNumber(num) {
 async function searchSoundCloud(query) {
   const browser = await puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+    ],
   });
 
   try {
