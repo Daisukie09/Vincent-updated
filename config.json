@@ -17,17 +17,17 @@
   "noPrefix": false,
   "noPrefixNotes": "When true, Bot Admins (role 2) and Developers (role 4) can run commands without the prefix",
   "adminOnly": {
-    "enable": false,
+    "enable": true,
     "ignoreCommand": []
   },
   "adminBot": [
-    "61589047318104", "61577528385354"
+    "61589047318104", "61583174657283"
   ],
   "premiumUsers": [
-    "61589047318104", "61577528385354"
+    "61589047318104", "61583174657283"
   ],
   "devUsers": [
-    "61589047318104", "61577528385354"
+    "61589047318104", "61583174657283"
   ],
   "notes_premiumUsers": "List of user IDs with premium access (role 3)",
   "notes_devUsers": "List of developer IDs with full access (role 4)",
